@@ -1,6 +1,6 @@
 # HollowPoint.Azure
 
-One Paragraph of project description goes here
+An Azure storage table wrapper - featuring a Generic class that allows you to query you Azure Table Storage Entities.
 
 ## Getting Started
 
