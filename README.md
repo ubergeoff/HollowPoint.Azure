@@ -18,7 +18,7 @@ var filter = tt.Query()
 .ToODataString();   
 
 ```
-OData Output\
+OData Output:
 ```
 ((Age ge 16) and (Age lt 33))
 ```
