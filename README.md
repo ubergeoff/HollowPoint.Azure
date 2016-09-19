@@ -6,7 +6,7 @@ One Paragraph of project description goes here
 
 Add a the HollowPoint.Azure assembly as a reference to you project.
 
-## Example
+## Linq to OData Example:
 
 Where "People" is a simple "Microsoft.WindowsAzure.Storage.Table.TableEntity"
 
@@ -18,9 +18,21 @@ var filter = tt.Query()
 .ToODataString();   
 
 ```
-## OData Output
-
+OData Output\
 ```
 ((Age ge 16) and (Age lt 33))
+```
+
+## Linq - ToList() Example:
+
+Retieve all items that match the below criteria:
+
+```
+HollowPoint.Azure.DbTable<People> tt = new HollowPoint.Azure.DbTable<People>();
+
+var filter = tt.Query()
+.Where(t => t.Age >= 16 && t.Age < 33)
+.ToList();   
+
 ```
 
