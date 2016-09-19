@@ -18,5 +18,7 @@ var filter = tt.Query()
 ```
 ## OData Output
 
+```
 ((Age ge 16) and (Age lt 33))
+```
 
