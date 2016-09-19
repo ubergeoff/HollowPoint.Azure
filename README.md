@@ -8,6 +8,8 @@ Add a the HollowPoint.Azure assembly as a reference to you project.
 
 ## Example
 
+Where "People" is a simple "Microsoft.WindowsAzure.Storage.Table.TableEntity"
+
 ```
 HollowPoint.Azure.DbTable<People> tt = new HollowPoint.Azure.DbTable<People>();
 
