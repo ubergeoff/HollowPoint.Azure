@@ -1,65 +1,20 @@
-﻿using HollowPoint.Azure.Common;
-using Microsoft.WindowsAzure.Storage.Table;
-using System;
-using System.Data.Services.Common;
+using Azure;
+using Azure.Data.Tables;
 
-namespace HollowPoint.Azure
+namespace HollowPoint.Azure;
+
+public class BaseTableEntity : ITableEntity
 {
-    [DataServiceKey("PartitionKey", "RowKey")]
-    public class BaseTableEntity : TableEntity
-    {
+    // ITableEntity required properties
+    public string PartitionKey { get; set; } = string.Empty;
+    public string RowKey { get; set; } = string.Empty;
+    public DateTimeOffset? Timestamp { get; set; }
+    public ETag ETag { get; set; }
 
-        private DateTime _dateTime = DateTime.Now;
-        private string _title = string.Empty;
-        private bool _isDeleted = false;
+    // Custom properties (preserved from original)
+    public DateTime DateAdded { get; set; } = DateTime.UtcNow;
+    public string Title { get; set; } = string.Empty;
+    public bool IsDeleted { get; set; }
 
-        public DateTime DateAdded
-        {
-            get
-            {
-                return _dateTime;
-            }
-            set
-            {
-                _dateTime = value;
-            }
-        }
-        public string Title
-        {
-            get
-            {
-                return _title;
-            }
-            set
-            {
-                _title = value;
-            }
-        }
-
-        public bool IsDeleted
-        {
-            get
-            {
-                return _isDeleted;
-            }
-            set
-            {
-                _isDeleted = value;
-            }
-        }
-
-
-
-        public override string ToString()
-        {
-            return Title;
-        }
-
-       
-     
-
-
-    }
-
-
+    public override string ToString() => Title;
 }

@@ -1,48 +1,25 @@
-﻿using HollowPoint.Azure.Tools;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Linq.Expressions;
-using System.Reflection;
-using System.Text;
-using System.Threading.Tasks;
+using HollowPoint.Azure.Query;
+using HollowPoint.Azure.Tools;
+using Azure.Data.Tables;
 
-namespace HollowPoint.Azure.Extensions
+namespace HollowPoint.Azure.Extensions;
+
+public static class QueryableExtension
 {
-    public static class QueryableExtension
+    /// <summary>
+    /// Converts an IQueryable from DbTable.Query() to an OData filter string.
+    /// Only works with queries created by HollowPoint.Azure DbTable.
+    /// </summary>
+    public static string ToODataString<T>(this IQueryable<T> query) where T : class, ITableEntity, new()
     {
-        /// <summary>
-        /// For an Entity Framework IQueryable, returns the SQL and Parameters.
-        /// </summary>
-        /// <typeparam name="T"></typeparam>
-        /// <param name="query"></param>
-        /// <returns></returns>
-        public static string ToODataString<T>(this IQueryable<T> query)
+        if (query is AzureTableQueryable<T> azureQuery)
         {
-            //Microsoft.WindowsAzure.Storage.Table.TableQuery<T>           
-
-            var internalQueryFields = query.GetType().GetFields(
-                       BindingFlags.Instance |
-                       BindingFlags.NonPublic);
-
-            var internalQueryField = internalQueryFields.Where(f => f.Name.Equals("queryExpression")).FirstOrDefault();
-            var internalQuery = internalQueryField.GetValue(query);
-
-            var type = internalQuery.GetType();
-
-            var objectQueryFields = internalQuery.GetType().GetFields(
-                System.Reflection.BindingFlags.NonPublic |
-                System.Reflection.BindingFlags.Instance);
-
-            var objectQueryField = objectQueryFields.Where(f => f.Name.Equals("_arguments")).FirstOrDefault();
-
-            var item = objectQueryField.GetValue(internalQuery) as IReadOnlyCollection<Expression>;
-
-            var quote = item.Where(t => t.NodeType == ExpressionType.Quote).FirstOrDefault() as UnaryExpression;
-
             var translator = new ODataTranslator();
-            return translator.Translate(quote.Operand as LambdaExpression);
+            return translator.Translate(azureQuery.Expression);
         }
 
+        throw new NotSupportedException(
+            "ToODataString only works with IQueryable instances returned from DbTable<T>.Query(). " +
+            "The provided query is not an AzureTableQueryable.");
     }
 }

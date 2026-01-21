@@ -1,270 +1,178 @@
-﻿using HollowPoint.Azure.Common;
-using Microsoft.WindowsAzure.Storage;
-using Microsoft.WindowsAzure.Storage.Table;
-using Microsoft.WindowsAzure.Storage.Table.Protocol;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Net;
-using System.Threading.Tasks;
-using System.Web;
-using System.Web.Caching;
-using HollowPoint.Azure.Extensions;
+using Azure;
+using Azure.Data.Tables;
+using HollowPoint.Azure.Configuration;
+using HollowPoint.Azure.Interfaces;
+using HollowPoint.Azure.Query;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Options;
 
+namespace HollowPoint.Azure;
 
-namespace HollowPoint.Azure
+public partial class DbTable<T> : IDbTable<T> where T : class, ITableEntity, new()
 {
-    public partial class DbTable<T> where T : BaseTableEntity, new()
+    private readonly TableServiceClient _serviceClient;
+    private readonly IMemoryCache _cache;
+    private readonly AzureTableOptions _options;
+    private TableClient? _tableClient;
+    private string? _typeName;
+
+    // Constructor for DI (only way to instantiate)
+    public DbTable(
+        TableServiceClient serviceClient,
+        IMemoryCache cache,
+        IOptions<AzureTableOptions> options)
     {
-        private T _value;
-        private T Instance
-        {
-            get
-            {
-                if (_value == null)
-                {
-                    _value = new T();
-                }
+        _serviceClient = serviceClient ?? throw new ArgumentNullException(nameof(serviceClient));
+        _cache = cache ?? throw new ArgumentNullException(nameof(cache));
+        _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+    }
 
-                return _value;
-            }
-        }
-
-        public DbTable(CloudTableClient tableClient = null)
-        {
-            _tableClient = tableClient;
-        }
-
-    
-
-
-        private CloudTable _cloudTable;
-
-        //dont dispose this
-        private CloudTableClient _tableClient;
-
-        internal void Dispose()
-        {           
-            _cloudTable = null;
-            _value = null;
-
-
-        }
-
-        private CloudTable Table
-        {
-
-            get
-            {
-                if (_cloudTable == null)
-                {
-                    _cloudTable = GetTableReference(TypeName);
-                }
-
-                return _cloudTable;
-            }
-        }
-
-
-        /// <summary>
-        /// 
-        /// </summary>
-        /// <param name="tableName"></param>
-        /// <param name="table"></param>
-        /// <returns></returns>
-        private bool TableExists(string tableName, CloudTable table)
-        {
-            bool exists = false;
-            object obj = null;
-            var cache = HttpContext.Current.Cache;
-
-            try
-            {
-                obj = cache.Get(tableName);
-            }
-            finally
-            {
-                if (obj == null)
-                {
-                    //create the table is it does not exist
-                    //               OR
-                    //Ensure that the table already exist
-
-                    try
-                    {
-                        table.CreateIfNotExists();
-                    }
-                    catch (StorageException storeEX)
-                    {
-                        if (storeEX.RequestInformation.HttpStatusCode == Int32.Parse(HttpStatusCode.Conflict.ToString()) &&
-                            storeEX.RequestInformation.ExtendedErrorInformation.ErrorMessage == TableErrorCodeStrings.TableAlreadyExists)
-                        {
-                            exists = true;
-                        }
-
-                    }
-                    cache.Insert(tableName, tableName + " exists", null, DateTime.Now.AddDays(1), Cache.NoSlidingExpiration);
-                    exists = true;
-
-
-                }
-                else
-                    exists = true;
-            }
-
-            return exists;
-
-        }
-
-        private CloudTable GetTableReference(string tableName)
+    private TableClient Table
+    {
+        get
         {
             if (_tableClient == null)
             {
-                CloudStorageAccount storageAccount = CloudStorageAccount.Parse(CloudConfigurationManager.GetSetting("StorageConnectionString"));
-
-                // Create the table client.
-                _tableClient = storageAccount.CreateCloudTableClient();
+                _tableClient = GetTableClient(TypeName);
             }
-            //create a refrence to the table
-            CloudTable table = _tableClient.GetTableReference(tableName);
+            return _tableClient;
+        }
+    }
 
-            if (TableExists(tableName, table))
+    private string TypeName
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(_typeName))
             {
-                return table;
+                string type = GetType().ToString();
+                // Inline Helpers.QuickSplit logic
+                var parts = type.Split(new[] { '.', '[', ']' }, StringSplitOptions.RemoveEmptyEntries);
+                _typeName = parts[^1]; // C# 8+ index from end
             }
-            else
-                throw new Exception("Unable to create Azure table");
+            return _typeName;
+        }
+    }
 
+    private TableClient GetTableClient(string tableName)
+    {
+        var tableClient = _serviceClient.GetTableClient(tableName);
+
+        if (EnsureTableExists(tableName, tableClient))
+        {
+            return tableClient;
         }
 
-        private void CheckForRequiredFields(ITableEntity entity)
-        {
-            if (string.IsNullOrEmpty(entity.RowKey))
-                throw new ArgumentNullException("RowKey");
+        throw new InvalidOperationException($"Unable to create Azure table '{tableName}'");
+    }
 
-            if (string.IsNullOrEmpty(entity.PartitionKey))
-                throw new ArgumentNullException("PartitionKey");
+    private bool EnsureTableExists(string tableName, TableClient tableClient)
+    {
+        if (!_options.EnableCaching)
+        {
+            tableClient.CreateIfNotExists();
+            return true;
         }
 
-        public void Add(ITableEntity entity)
+        string cacheKey = $"table_exists_{tableName}";
+
+        return _cache.GetOrCreate(cacheKey, entry =>
         {
-            CheckForRequiredFields(entity);
+            entry.AbsoluteExpirationRelativeToNow = _options.CacheDuration;
 
-            // Execute the insert operation.
-            Table.Execute(TableOperation.Insert(entity));
-        }
-
-        public void Delete(ITableEntity entity)
-        {
-            //CheckForRequiredFields(entity);
-
-            // Execute the insert operation.
-            Table.Execute(TableOperation.Delete(entity));
-        }
-
-        public void Update(ITableEntity entity)
-        {
-            CheckForRequiredFields(entity);
-            // Execute the insert operation.
-            Table.Execute(TableOperation.Replace(entity));
-        }
-
-        public async Task<TableResult> AddAsync(ITableEntity entity)
-        {
-            CheckForRequiredFields(entity);
-            // Execute the insert operation.
-            return await Table.ExecuteAsync(TableOperation.Insert(entity));
-        }
-
-        public async Task<TableResult> UpdateAsync(ITableEntity entity)
-        {
-            CheckForRequiredFields(entity);
-            // Execute the insert operation.
-            return await Table.ExecuteAsync(TableOperation.Replace(entity));
-        }
-
-        public List<T> Execute(TableQuery<T> query)
-        {
-            var entities = new List<T>();
-
-            foreach (var item in Table.ExecuteQuery(query))
+            try
             {
-                entities.Add(item);
+                tableClient.CreateIfNotExists();
+                return true;
             }
-
-            return entities;
-        }
-
-        private T GetByRowKey(string rowKey, string partitionKey)
-        {
-            return Table.CreateQuery<T>()
-                .Where(t => t.PartitionKey == partitionKey && t.RowKey == rowKey)
-                .FirstOrDefault();
-
-        }
-
-
-        private T GetByPartitionKey(string partitionKey)
-        {
-            return Table.CreateQuery<T>()
-                .Where(t => t.PartitionKey == partitionKey)
-                .FirstOrDefault();
-
-        }
-
-        public T Get(string partitionKey, string rowKey = null)
-        {
-            if (rowKey == null)
+            catch (RequestFailedException ex) when (ex.Status == 409)
             {
-                return GetByPartitionKey(partitionKey);
+                // 409 Conflict = table already exists
+                return true;
             }
-            else
-            {
-                return GetByRowKey(rowKey, partitionKey);
-            }
-        }
+        })!;
+    }
 
-      
+    private static void ValidateEntity(T entity)
+    {
+        if (string.IsNullOrEmpty(entity.PartitionKey))
+            throw new ArgumentNullException(nameof(entity.PartitionKey), "PartitionKey is required");
 
-        public List<T> GetAllByPartitionKey(string key)
+        if (string.IsNullOrEmpty(entity.RowKey))
+            throw new ArgumentNullException(nameof(entity.RowKey), "RowKey is required");
+    }
+
+    // Synchronous CRUD operations
+    public void Add(T entity)
+    {
+        ValidateEntity(entity);
+        Table.AddEntity(entity);
+    }
+
+    public void Delete(T entity)
+    {
+        Table.DeleteEntity(entity.PartitionKey, entity.RowKey, entity.ETag);
+    }
+
+    public void Update(T entity)
+    {
+        ValidateEntity(entity);
+        Table.UpdateEntity(entity, entity.ETag, TableUpdateMode.Replace);
+    }
+
+    public T? Get(string partitionKey, string rowKey)
+    {
+        try
         {
-
-            var query = Table.CreateQuery<T>()
-                .Where(t => t.PartitionKey == key);
-
-            return query.ToList();
+            var response = Table.GetEntity<T>(partitionKey, rowKey);
+            return response.Value;
         }
-
-        public async Task<TableResult> FindAsync(string partitionKey, string rowKey)
+        catch (RequestFailedException ex) when (ex.Status == 404)
         {
-            TableOperation retrieveOperation = TableOperation.Retrieve<T>(partitionKey, rowKey);
-            return await Table.ExecuteAsync(retrieveOperation);
+            return null;
         }
+    }
 
-        public TableQuery<T> Query()
+    public List<T> GetAllByPartitionKey(string partitionKey)
+    {
+        string filter = $"PartitionKey eq '{partitionKey}'";
+        return Table.Query<T>(filter).ToList();
+    }
+
+    // Asynchronous CRUD operations
+    public async Task<Response> AddAsync(T entity)
+    {
+        ValidateEntity(entity);
+        return await Table.AddEntityAsync(entity);
+    }
+
+    public async Task<Response> UpdateAsync(T entity)
+    {
+        ValidateEntity(entity);
+        return await Table.UpdateEntityAsync(entity, entity.ETag, TableUpdateMode.Replace);
+    }
+
+    public async Task<Response> DeleteAsync(T entity)
+    {
+        return await Table.DeleteEntityAsync(entity.PartitionKey, entity.RowKey, entity.ETag);
+    }
+
+    public async Task<T?> GetAsync(string partitionKey, string rowKey)
+    {
+        try
         {
-            return Table.CreateQuery<T>();
+            var response = await Table.GetEntityAsync<T>(partitionKey, rowKey);
+            return response.Value;
         }
-
-
-
-        string _typeName;
-        private string TypeName
+        catch (RequestFailedException ex) when (ex.Status == 404)
         {
-            get
-            {
-                if (string.IsNullOrEmpty(_typeName))
-                {
-                    string type = this.GetType().ToString();
-                    var shortTypeArray = Helpers.QuickSplit(type, ".][");
-                    _typeName = shortTypeArray[shortTypeArray.GetUpperBound(0)];
-                }
-
-                return _typeName;
-            }
+            return null;
         }
+    }
 
-      
-
+    // Query operation - returns custom IQueryable
+    public IQueryable<T> Query()
+    {
+        return new AzureTableQueryable<T>(Table);
     }
 }

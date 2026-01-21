@@ -1,11 +1,6 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Linq.Expressions;
+﻿using System.Linq.Expressions;
 using System.Reflection;
 using System.Text;
-using System.Web;
-
 
 namespace HollowPoint.Azure.Tools
 {
@@ -95,22 +90,22 @@ namespace HollowPoint.Azure.Tools
                     return this.Visit(nextExpression);
                 }
             }
-            //else if (m.Method.Name == "OrderBy")
-            //{
-            //    if (this.ParseOrderByExpression(m, "ASC"))
-            //    {
-            //        Expression nextExpression = m.Arguments[0];
-            //        return this.Visit(nextExpression);
-            //    }
-            //}
-            //else if (m.Method.Name == "OrderByDescending")
-            //{
-            //    if (this.ParseOrderByExpression(m, "DESC"))
-            //    {
-            //        Expression nextExpression = m.Arguments[0];
-            //        return this.Visit(nextExpression);
-            //    }
-            //}
+            else if (m.Method.Name == "OrderBy")
+            {
+                if (this.ParseOrderByExpression(m, "asc"))
+                {
+                    Expression nextExpression = m.Arguments[0];
+                    return this.Visit(nextExpression);
+                }
+            }
+            else if (m.Method.Name == "OrderByDescending")
+            {
+                if (this.ParseOrderByExpression(m, "desc"))
+                {
+                    Expression nextExpression = m.Arguments[0];
+                    return this.Visit(nextExpression);
+                }
+            }
 
             throw new NotSupportedException(string.Format("The method '{0}' is not supported", m.Method.Name));
         }
@@ -316,30 +311,28 @@ namespace HollowPoint.Azure.Tools
             return (exp.NodeType == ExpressionType.Constant && ((ConstantExpression)exp).Value == null);
         }
 
-        //private bool ParseOrderByExpression(MethodCallExpression expression, string order)
-        //{
-        //    UnaryExpression unary = (UnaryExpression)expression.Arguments[1];
-        //    LambdaExpression lambdaExpression = (LambdaExpression)unary.Operand;
+        private bool ParseOrderByExpression(MethodCallExpression expression, string order)
+        {
+            UnaryExpression unary = (UnaryExpression)expression.Arguments[1];
+            LambdaExpression lambdaExpression = (LambdaExpression)unary.Operand;
 
-        //    lambdaExpression = (LambdaExpression)Evaluator.PartialEval(lambdaExpression);
+            MemberExpression? body = lambdaExpression.Body as MemberExpression;
+            if (body != null)
+            {
+                if (string.IsNullOrEmpty(_orderBy))
+                {
+                    _orderBy = string.Format("{0} {1}", body.Member.Name, order);
+                }
+                else
+                {
+                    _orderBy = string.Format("{0}, {1} {2}", _orderBy, body.Member.Name, order);
+                }
 
-        //    MemberExpression body = lambdaExpression.Body as MemberExpression;
-        //    if (body != null)
-        //    {
-        //        if (string.IsNullOrEmpty(_orderBy))
-        //        {
-        //            _orderBy = string.Format("{0} {1}", body.Member.Name, order);
-        //        }
-        //        else
-        //        {
-        //            _orderBy = string.Format("{0}, {1} {2}", _orderBy, body.Member.Name, order);
-        //        }
+                return true;
+            }
 
-        //        return true;
-        //    }
-
-        //    return false;
-        //}
+            return false;
+        }
 
         private bool ParseTakeExpression(MethodCallExpression expression)
         {
